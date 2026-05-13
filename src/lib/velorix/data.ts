@@ -3,10 +3,22 @@
 import { createClient } from '@/lib/supabase/server'
 import { redirect } from 'next/navigation'
 import type {
-  Profile,
+  Profile as DbProfile,
   MonthlyPerformance,
   TreeMonthlyAggregate,
+  VelorixTier,
+  UserRole,
+  AccountStatus,
 } from '@/types/velorix'
+
+// Postgres CHECK constraints aren't reflected in generated types — they come
+// back as `string | null`. We trust the DB constraint and narrow at the data
+// boundary so all downstream consumers get correct types.
+export type Profile = Omit<DbProfile, 'role' | 'velorix_tier' | 'account_status'> & {
+  role: UserRole
+  velorix_tier: VelorixTier | null
+  account_status: AccountStatus
+}
 
 /**
  * Returns the current user's first-of-month date string (YYYY-MM-DD)
@@ -47,7 +59,7 @@ export async function getCurrentUserProfile(): Promise<Profile> {
     throw new Error('Profile not found for current user')
   }
 
-  return data
+  return data as Profile
 }
 
 /**
