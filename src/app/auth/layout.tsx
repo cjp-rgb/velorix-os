@@ -13,7 +13,7 @@ export default function AuthLayout({ children }: { children: ReactNode }) {
             Velorix
           </h1>
           <p className="mt-1 text-xs text-text-dim">
-            The operating layer for advisors.
+            The operating network built for IBs who actually run a business.
           </p>
         </div>
         {children}

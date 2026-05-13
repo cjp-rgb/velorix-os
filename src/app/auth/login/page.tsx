@@ -62,13 +62,6 @@ export default function LoginPage() {
         ) : (
           <PasswordForm />
         )}
-
-        <div className="border-t-[0.5px] border-border pt-4 text-center text-xs text-text-dim">
-          New to Velorix?{' '}
-          <span aria-disabled="true" className="cursor-not-allowed text-text-muted">
-            Sign up by invitation only
-          </span>
-        </div>
       </CardBody>
     </Card>
   )
