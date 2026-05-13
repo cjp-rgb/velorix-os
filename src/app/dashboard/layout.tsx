@@ -1,6 +1,7 @@
 import { redirect } from 'next/navigation'
 import { createClient } from '@/lib/supabase/server'
 import { Sidebar } from './_components/Sidebar'
+import { PWAInstallPrompt } from '@/components/PWAInstallPrompt'
 
 export default async function DashboardLayout({
   children,
@@ -17,9 +18,12 @@ export default async function DashboardLayout({
   }
 
   return (
-    <div className="flex min-h-dvh">
-      <Sidebar userEmail={user.email ?? ''} />
-      <main className="flex-1 overflow-y-auto px-8 py-10">{children}</main>
-    </div>
+    <>
+      <div className="flex min-h-dvh">
+        <Sidebar userEmail={user.email ?? ''} />
+        <main className="flex-1 overflow-y-auto px-8 py-10">{children}</main>
+      </div>
+      <PWAInstallPrompt />
+    </>
   )
 }
