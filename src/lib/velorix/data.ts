@@ -6,6 +6,7 @@ import type {
   Profile as DbProfile,
   MonthlyPerformance,
   TreeMonthlyAggregate,
+  PuPrimeAccount,
   VelorixTier,
   UserRole,
   AccountStatus,
@@ -158,6 +159,35 @@ export async function getCurrentUserEarningsHistory(
 
   if (error) {
     console.error('getCurrentUserEarningsHistory error:', error)
+    return []
+  }
+
+  return data ?? []
+}
+
+/**
+ * Loads PU Prime client accounts directly owned by the current operator.
+ * Returns accounts ordered by most recent trade activity first.
+ * Returns empty array if no clients (or on error — caller can handle empty state).
+ */
+export async function getCurrentUserClients(): Promise<PuPrimeAccount[]> {
+  const supabase = await createClient()
+  const {
+    data: { user },
+  } = await supabase.auth.getUser()
+
+  if (!user) {
+    redirect('/auth/login')
+  }
+
+  const { data, error } = await supabase
+    .from('pu_prime_accounts')
+    .select('*')
+    .eq('account_owner_operator_id', user.id)
+    .order('last_trade_date', { ascending: false, nullsFirst: false })
+
+  if (error) {
+    console.error('getCurrentUserClients error:', error)
     return []
   }
 
