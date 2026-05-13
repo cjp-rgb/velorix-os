@@ -1,27 +1,17 @@
-import { Sparkles } from 'lucide-react'
-import { createClient } from '@/lib/supabase/server'
-import { EmptyState } from '@/components/ui/EmptyState'
-
-export default async function DashboardPage() {
-  const supabase = await createClient()
-  const {
-    data: { user },
-  } = await supabase.auth.getUser()
-
+export default function DashboardPage() {
   return (
-    <div className="mx-auto max-w-4xl space-y-8">
-      <header className="space-y-1">
-        <h1 className="font-display text-2xl font-semibold tracking-tight text-text">
-          Welcome back
+    <div className="min-h-screen bg-bg flex items-center justify-center px-6">
+      <div className="max-w-md text-center">
+        <h1 className="text-3xl font-display font-semibold text-text">
+          Welcome to Velorix
         </h1>
-        <p className="text-sm text-text-dim">{user?.email}</p>
-      </header>
-
-      <EmptyState
-        icon={<Sparkles className="h-5 w-5" />}
-        title="Nothing here yet"
-        description="Your dashboard will populate as you start building your network and inviting clients."
-      />
+        <p className="mt-4 text-text-dim">
+          Phase 1 building soon. Your operating layer will appear here.
+        </p>
+        <p className="mt-8 text-xs text-text-muted font-mono">
+          v0.1 · foundation
+        </p>
+      </div>
     </div>
   )
 }
