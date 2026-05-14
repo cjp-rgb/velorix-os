@@ -7,6 +7,7 @@ import {
 import { StatCard } from '@/components/ui/StatCard'
 import { formatUSD, formatLots, formatTier, formatRebate } from '@/lib/format'
 import { Users, TrendingUp, DollarSign, Network } from 'lucide-react'
+import { NetDepositSphere } from '@/components/NetDepositSphereClient'
 
 export default async function DashboardPage() {
   const profile = await getCurrentUserProfile()
@@ -59,22 +60,21 @@ export default async function DashboardPage() {
         </p>
       </div>
 
-      {/* Net Deposit Sphere placeholder — replaced in Section 1.6 */}
+      {/* Net Deposit Sphere — Three.js hero */}
       <div className="mb-8 md:mb-12">
-        <div className="aspect-square max-w-md mx-auto rounded-card bg-surface border border-border flex items-center justify-center">
-          <div className="text-center px-6">
-            <p className="text-xs text-text-muted font-mono uppercase tracking-wider">
-              Net Deposit Sphere
-            </p>
-            <p className="mt-2 text-3xl md:text-4xl font-display font-semibold text-text tabular-nums">
-              {formatUSD(treeNetDeposits, { compact: true, showCents: false })}
-            </p>
-            <p className="mt-1 text-xs text-text-dim font-mono">building in 1.6</p>
-          </div>
-        </div>
-        <div className="text-center mt-4">
+        <NetDepositSphere
+          treeNetDeposits={treeNetDeposits}
+          treeVolumeLots={treeVolume}
+          tier={tier}
+          memberCount={treeMembers}
+          activeMemberCount={treeActiveMembers}
+        />
+        <div className="text-center mt-6">
           <p className="text-xs uppercase tracking-wider text-text-muted font-mono">
             Tree Net Deposits — this month
+          </p>
+          <p className="mt-2 text-3xl md:text-4xl font-display font-semibold text-text tabular-nums">
+            {formatUSD(treeNetDeposits, { compact: false, showCents: false })}
           </p>
           <p className="mt-1 text-sm text-text-dim">
             across {treeActiveMembers} active {treeActiveMembers === 1 ? 'member' : 'members'}
