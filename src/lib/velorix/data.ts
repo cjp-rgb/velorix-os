@@ -512,3 +512,56 @@ export async function updateProfile(updates: {
 
   return data as Profile
 }
+
+/**
+ * Updates the current user's notification preferences.
+ *
+ * Preferences are stored as JSONB with the shape:
+ *   {
+ *     [category: string]: {
+ *       email: boolean,
+ *       push: boolean,
+ *       in_app: boolean,
+ *     }
+ *   }
+ *
+ * Categories are not validated at the database level — application code
+ * is responsible for using the canonical category list (see NOTIFICATION_CATEGORIES
+ * in the notifications page).
+ *
+ * This Server Action replaces the entire notification_preferences JSONB. The
+ * caller is responsible for sending the complete preferences object — partial
+ * updates would lose unset categories.
+ *
+ * Note: notification firing system not built yet (Phase 4+). Preferences are
+ * stored now so they're ready when notifications start firing.
+ */
+export async function updateNotificationPreferences(
+  preferences: Record<
+    string,
+    { email: boolean; push: boolean; in_app: boolean }
+  >
+): Promise<Profile> {
+  const supabase = await createClient()
+  const {
+    data: { user },
+  } = await supabase.auth.getUser()
+
+  if (!user) {
+    redirect('/auth/login')
+  }
+
+  const { data, error } = await supabase
+    .from('profiles')
+    .update({ notification_preferences: preferences })
+    .eq('id', user.id)
+    .select('*')
+    .single()
+
+  if (error || !data) {
+    console.error('updateNotificationPreferences error:', error)
+    throw new Error(error?.message ?? 'Failed to update notification preferences')
+  }
+
+  return data as Profile
+}
