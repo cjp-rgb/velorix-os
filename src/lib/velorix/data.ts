@@ -435,3 +435,80 @@ export async function getCurrentUserTopContributors(monthYear?: Date): Promise<
 
   return contributions
 }
+
+/**
+ * Updates the current user's editable profile fields.
+ *
+ * Allowed fields only (user-editable):
+ * - full_name
+ * - display_name
+ * - phone
+ * - country
+ * - timezone
+ * - instagram_handle
+ * - telegram_handle
+ *
+ * NOT allowed via this Server Action (admin-only):
+ * - allocated_rebate, velorix_tier, role, account_status, email
+ * - profile_photo_url (separate Server Action for photo upload, Phase 1.9d)
+ *
+ * Returns the updated profile (narrowed Profile type).
+ * Throws on validation failure or database error.
+ */
+export async function updateProfile(updates: {
+  full_name?: string
+  display_name?: string | null
+  phone?: string | null
+  country?: string | null
+  timezone?: string | null
+  instagram_handle?: string | null
+  telegram_handle?: string | null
+}): Promise<Profile> {
+  const supabase = await createClient()
+  const {
+    data: { user },
+  } = await supabase.auth.getUser()
+
+  if (!user) {
+    redirect('/auth/login')
+  }
+
+  // Whitelist allowed fields. Drop anything else the caller passed.
+  const allowedFields: Array<keyof typeof updates> = [
+    'full_name',
+    'display_name',
+    'phone',
+    'country',
+    'timezone',
+    'instagram_handle',
+    'telegram_handle',
+  ]
+  const safeUpdates: Record<string, unknown> = {}
+  for (const key of allowedFields) {
+    if (key in updates) {
+      safeUpdates[key] = updates[key]
+    }
+  }
+
+  // Basic server-side validation
+  if (
+    typeof safeUpdates.full_name === 'string' &&
+    safeUpdates.full_name.trim().length === 0
+  ) {
+    throw new Error('Full name cannot be empty')
+  }
+
+  const { data, error } = await supabase
+    .from('profiles')
+    .update(safeUpdates)
+    .eq('id', user.id)
+    .select('*')
+    .single()
+
+  if (error || !data) {
+    console.error('updateProfile error:', error)
+    throw new Error(error?.message ?? 'Failed to update profile')
+  }
+
+  return data as Profile
+}

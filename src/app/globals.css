@@ -38,6 +38,7 @@
   /* Radii */
   --radius-card: 12px;
   --radius-btn: 6px;
+  --radius-input: 8px;
 }
 
 :root {
