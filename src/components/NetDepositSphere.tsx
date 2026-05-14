@@ -2,7 +2,7 @@
 
 import { Canvas, useFrame } from '@react-three/fiber'
 import { OrbitControls } from '@react-three/drei'
-import { useRef, useMemo } from 'react'
+import { useRef, useMemo, useState, useEffect } from 'react'
 import * as THREE from 'three'
 import type { VelorixTier } from '@/types/velorix'
 import { EffectComposer, Bloom } from '@react-three/postprocessing'
@@ -224,10 +224,24 @@ export function NetDepositSphere({
   const innerParticleCount = calculateInnerParticleCount(treeVolumeLots)
   const haloParticleCount = calculateHaloParticleCount(activeMemberCount)
 
+  // Viewport-aware camera distance.
+  // Desktop: camera close (z=6) for prominent sphere.
+  // Mobile: camera back (z=8) to leave growth headroom for large-tree operators.
+  const [cameraZ, setCameraZ] = useState(6)
+
+  useEffect(() => {
+    const updateCamera = () => {
+      setCameraZ(window.innerWidth < 768 ? 8 : 6)
+    }
+    updateCamera()
+    window.addEventListener('resize', updateCamera)
+    return () => window.removeEventListener('resize', updateCamera)
+  }, [])
+
   return (
     <div className="aspect-square max-w-md mx-auto relative">
       <Canvas
-        camera={{ position: [0, 0, 6], fov: 50 }}
+        camera={{ position: [0, 0, cameraZ], fov: 50 }}
         gl={{ antialias: true, alpha: true }}
       >
         <ambientLight intensity={0.3} />
