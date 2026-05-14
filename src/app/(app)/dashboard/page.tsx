@@ -8,6 +8,7 @@ import { StatCard } from '@/components/ui/StatCard'
 import { formatUSD, formatLots, formatTier, formatRebate } from '@/lib/format'
 import { Users, TrendingUp, DollarSign, Network } from 'lucide-react'
 import { NetDepositSphere } from '@/components/NetDepositSphereClient'
+import { TierTracker } from '@/components/TierTracker'
 
 export default async function DashboardPage() {
   const profile = await getCurrentUserProfile()
@@ -82,14 +83,14 @@ export default async function DashboardPage() {
         </div>
       </div>
 
-      {/* Tier tracker placeholder — replaced in Section 1.7 */}
+      {/* Tier tracker */}
       <div className="mb-8 md:mb-12">
-        <div className="rounded-card bg-surface border border-border p-6">
-          <p className="text-xs uppercase tracking-wider text-text-muted font-medium">
-            Tier Progress
-          </p>
-          <p className="mt-2 text-text-dim text-sm">Tier tracker building in 1.7</p>
-        </div>
+        <TierTracker
+          currentTier={tier}
+          treeNetDeposits={treeNetDeposits}
+          treeMemberCount={treeMembers}
+          allocatedRebate={allocatedRebate}
+        />
       </div>
 
       {/* Stat row */}
