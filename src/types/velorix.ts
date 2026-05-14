@@ -61,6 +61,7 @@ export type AutomationType =
   | 'eod_bot'
   | 'profit_shot_pipeline'
   | 'tier_progress_notifier'
+  | 'telegram_bot_connection'
 
 // ============================================================================
 // Composite/derived types used throughout the app

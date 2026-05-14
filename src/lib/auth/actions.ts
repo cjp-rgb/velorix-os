@@ -84,3 +84,82 @@ export async function signOutEverywhere(): Promise<void> {
 
   redirect('/auth/login')
 }
+
+/**
+ * Permanently terminates the current user's Velorix account.
+ *
+ * This is a soft-delete: the profile row remains with account_status='terminated'
+ * for audit and tax-record purposes. Hard delete of personal data happens 30 days
+ * later via admin cleanup (Phase 4 work).
+ *
+ * Sequence:
+ * 1. Verify the user typed the correct confirmation string ("DELETE")
+ * 2. Disconnect any active Telegram bot (sets is_enabled=false, clears token)
+ * 3. Mark profile as terminated (account_status='terminated')
+ * 4. Sign out of all sessions (global scope)
+ * 5. Redirect to /auth/terminated
+ *
+ * Sub-affiliate cascade termination is NOT handled here — that's Phase 4 work
+ * (no sub-affiliates exist in Velorix yet). When it ships, it adds a step
+ * between (3) and (4) to notify downline + start their 30-day grace window.
+ *
+ * Throws if confirmation string doesn't match.
+ */
+export async function deleteAccount(args: {
+  confirmation: string
+}): Promise<void> {
+  if (args.confirmation !== 'DELETE') {
+    throw new Error('Confirmation text does not match. Type DELETE exactly to confirm.')
+  }
+
+  const supabase = await createClient()
+
+  const {
+    data: { user },
+  } = await supabase.auth.getUser()
+
+  if (!user) {
+    redirect('/auth/login')
+  }
+
+  // Step 1: Disconnect any active Telegram bot.
+  // We do this directly here rather than calling disconnectTelegramBot()
+  // because we want a single failure point and we're already cleaning up.
+  // The update is idempotent — if no bot is connected, it updates zero rows.
+  const { error: botError } = await supabase
+    .from('automation_configs')
+    .update({
+      is_enabled: false,
+      config_jsonb: { disconnected_at: new Date().toISOString(), reason: 'account_terminated' },
+    })
+    .eq('operator_id', user.id)
+    .eq('automation_type', 'telegram_bot_connection')
+
+  if (botError) {
+    console.error('deleteAccount bot disconnect error:', botError)
+    // Don't throw — bot disconnect failure shouldn't block account termination
+  }
+
+  // Step 2: Mark profile as terminated
+  const { error: profileError } = await supabase
+    .from('profiles')
+    .update({ account_status: 'terminated' })
+    .eq('id', user.id)
+
+  if (profileError) {
+    console.error('deleteAccount profile update error:', profileError)
+    throw new Error('Failed to terminate account. Contact support.')
+  }
+
+  // Step 3: Sign out globally
+  const { error: signOutError } = await supabase.auth.signOut({ scope: 'global' })
+
+  if (signOutError) {
+    console.error('deleteAccount signOut error:', signOutError)
+    // Don't throw — the profile is already terminated, sign-out failure
+    // just means cookies might persist briefly. Auth gate will catch it.
+  }
+
+  // Step 4: Redirect to terminated page
+  redirect('/auth/terminated')
+}

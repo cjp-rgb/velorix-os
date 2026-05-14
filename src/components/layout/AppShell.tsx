@@ -13,6 +13,7 @@ type ProfileShape = {
   role: 'admin' | 'master' | 'sub_affiliate'
   velorix_tier: 'entry' | 'growth' | 'scale' | null
   profile_photo_url: string | null
+  account_status: 'pending' | 'active' | 'terminated'
 }
 
 export async function AppShell({
@@ -31,7 +32,7 @@ export async function AppShell({
 
   const { data, error } = await supabase
     .from('profiles')
-    .select('id, full_name, display_name, email, role, velorix_tier, profile_photo_url')
+    .select('id, full_name, display_name, email, role, velorix_tier, profile_photo_url, account_status')
     .eq('id', user.id)
     .single()
 
@@ -40,6 +41,10 @@ export async function AppShell({
   }
 
   const profile = data as ProfileShape
+
+  if (profile.account_status === 'terminated') {
+    redirect('/auth/terminated')
+  }
 
   return (
     <div className="min-h-screen bg-bg">

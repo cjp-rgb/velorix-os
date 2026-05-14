@@ -8,6 +8,7 @@ import type {
   TreeMonthlyAggregate,
   PuPrimeAccount,
   DailyRebateSnapshot,
+  AutomationConfig,
   VelorixTier,
   UserRole,
   AccountStatus,
@@ -564,4 +565,215 @@ export async function updateNotificationPreferences(
   }
 
   return data as Profile
+}
+
+/**
+ * Validates a Telegram bot token by calling Telegram's getMe API.
+ * Returns the bot's metadata (id, username, first_name) on success.
+ * Throws if the token is invalid.
+ *
+ * This is a public Telegram API call — no auth on Velorix's end.
+ * The token itself authenticates with Telegram.
+ */
+async function validateTelegramBotToken(token: string): Promise<{
+  bot_id: number
+  bot_username: string
+  bot_first_name: string
+}> {
+  const trimmed = token.trim()
+
+  // Basic shape check before hitting the API
+  if (!/^\d+:[A-Za-z0-9_-]{30,}$/.test(trimmed)) {
+    throw new Error('Invalid bot token format. Expected format: 123456789:ABC-DEF...')
+  }
+
+  const response = await fetch(`https://api.telegram.org/bot${trimmed}/getMe`, {
+    method: 'GET',
+    cache: 'no-store',
+  })
+
+  if (!response.ok) {
+    // 401 means invalid token; other errors are network/Telegram-side issues
+    if (response.status === 401) {
+      throw new Error('Bot token is invalid. Check the token from @BotFather and try again.')
+    }
+    throw new Error(`Telegram API error: ${response.status} ${response.statusText}`)
+  }
+
+  const data = (await response.json()) as {
+    ok: boolean
+    result?: { id: number; username?: string; first_name?: string }
+    description?: string
+  }
+
+  if (!data.ok || !data.result) {
+    throw new Error(data.description ?? 'Telegram rejected the token')
+  }
+
+  if (!data.result.username) {
+    throw new Error('Bot has no username set. Configure a username in @BotFather first.')
+  }
+
+  return {
+    bot_id: data.result.id,
+    bot_username: data.result.username,
+    bot_first_name: data.result.first_name ?? data.result.username,
+  }
+}
+
+/**
+ * Connects the current operator's Telegram bot to Velorix.
+ *
+ * Validates the token with Telegram first. On success, upserts an
+ * automation_configs row of type 'telegram_bot_connection' with the
+ * token and bot metadata stored in config_jsonb.
+ *
+ * SECURITY NOTE: token is stored in plaintext in JSONB. Migration to
+ * Supabase Vault is on the v1.1 hardening backlog.
+ *
+ * Throws on validation failure or database error.
+ */
+export async function connectTelegramBot(token: string): Promise<{
+  bot_username: string
+  bot_first_name: string
+}> {
+  const supabase = await createClient()
+  const {
+    data: { user },
+  } = await supabase.auth.getUser()
+
+  if (!user) {
+    redirect('/auth/login')
+  }
+
+  // Validate via Telegram API (throws if invalid)
+  const botInfo = await validateTelegramBotToken(token)
+
+  const configPayload = {
+    token: token.trim(),
+    bot_id: botInfo.bot_id,
+    bot_username: botInfo.bot_username,
+    bot_first_name: botInfo.bot_first_name,
+    connected_at: new Date().toISOString(),
+  }
+
+  const { error } = await supabase
+    .from('automation_configs')
+    .upsert(
+      {
+        operator_id: user.id,
+        automation_type: 'telegram_bot_connection',
+        is_enabled: true,
+        config_jsonb: configPayload,
+      },
+      { onConflict: 'operator_id,automation_type' }
+    )
+
+  if (error) {
+    console.error('connectTelegramBot upsert error:', error)
+    throw new Error(error.message ?? 'Failed to save bot connection')
+  }
+
+  return {
+    bot_username: botInfo.bot_username,
+    bot_first_name: botInfo.bot_first_name,
+  }
+}
+
+/**
+ * Disconnects the current operator's Telegram bot.
+ *
+ * Sets is_enabled = false and clears the token from config_jsonb to
+ * minimize secret retention. Preserves bot metadata for audit purposes.
+ *
+ * Does NOT delete the row entirely — keeps history of past connections.
+ */
+export async function disconnectTelegramBot(): Promise<void> {
+  const supabase = await createClient()
+  const {
+    data: { user },
+  } = await supabase.auth.getUser()
+
+  if (!user) {
+    redirect('/auth/login')
+  }
+
+  // Fetch existing config to preserve bot metadata while clearing the token
+  const { data: existing } = await supabase
+    .from('automation_configs')
+    .select('config_jsonb')
+    .eq('operator_id', user.id)
+    .eq('automation_type', 'telegram_bot_connection')
+    .maybeSingle()
+
+  const existingConfig =
+    (existing?.config_jsonb as Record<string, unknown> | null) ?? {}
+
+  // Strip the token but preserve identifying metadata for audit
+  const sanitisedConfig = { ...existingConfig }
+  delete sanitisedConfig.token
+  sanitisedConfig.disconnected_at = new Date().toISOString()
+
+  const { error } = await supabase
+    .from('automation_configs')
+    .update({
+      is_enabled: false,
+      config_jsonb: sanitisedConfig,
+    })
+    .eq('operator_id', user.id)
+    .eq('automation_type', 'telegram_bot_connection')
+
+  if (error) {
+    console.error('disconnectTelegramBot error:', error)
+    throw new Error(error.message ?? 'Failed to disconnect bot')
+  }
+}
+
+/**
+ * Returns the current operator's bot connection state for UI display.
+ *
+ * Returns null if no connection has ever been made.
+ * Returns { is_enabled: false, ... } if previously connected and disconnected.
+ *
+ * Does NOT return the token — only metadata safe to render in the UI.
+ */
+export async function getOperatorBotConnection(): Promise<{
+  is_enabled: boolean
+  bot_username: string | null
+  bot_first_name: string | null
+  connected_at: string | null
+} | null> {
+  const supabase = await createClient()
+  const {
+    data: { user },
+  } = await supabase.auth.getUser()
+
+  if (!user) {
+    redirect('/auth/login')
+  }
+
+  const { data, error } = await supabase
+    .from('automation_configs')
+    .select('is_enabled, config_jsonb')
+    .eq('operator_id', user.id)
+    .eq('automation_type', 'telegram_bot_connection')
+    .maybeSingle()
+
+  if (error) {
+    console.error('getOperatorBotConnection error:', error)
+    return null
+  }
+
+  if (!data) {
+    return null
+  }
+
+  const config = (data.config_jsonb as Record<string, unknown> | null) ?? {}
+
+  return {
+    is_enabled: data.is_enabled ?? false,
+    bot_username: typeof config.bot_username === 'string' ? config.bot_username : null,
+    bot_first_name: typeof config.bot_first_name === 'string' ? config.bot_first_name : null,
+    connected_at: typeof config.connected_at === 'string' ? config.connected_at : null,
+  }
 }
