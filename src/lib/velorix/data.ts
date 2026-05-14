@@ -7,6 +7,7 @@ import type {
   MonthlyPerformance,
   TreeMonthlyAggregate,
   PuPrimeAccount,
+  DailyRebateSnapshot,
   VelorixTier,
   UserRole,
   AccountStatus,
@@ -192,4 +193,245 @@ export async function getCurrentUserClients(): Promise<PuPrimeAccount[]> {
   }
 
   return data ?? []
+}
+
+/**
+ * Loads daily_rebate_snapshots for the current operator within a date range.
+ * Returns rows ordered by date ascending.
+ *
+ * Used for:
+ * - Same-day month-over-month comparison
+ * - Daily earnings chart (last 30 days)
+ * - Custom date range analysis
+ */
+export async function getDailyRebatesInRange(
+  startDate: Date,
+  endDate: Date
+): Promise<DailyRebateSnapshot[]> {
+  const supabase = await createClient()
+  const {
+    data: { user },
+  } = await supabase.auth.getUser()
+
+  if (!user) {
+    redirect('/auth/login')
+  }
+
+  const startKey = startDate.toISOString().slice(0, 10)
+  const endKey = endDate.toISOString().slice(0, 10)
+
+  const { data, error } = await supabase
+    .from('daily_rebate_snapshots')
+    .select('*')
+    .eq('operator_id', user.id)
+    .gte('date', startKey)
+    .lte('date', endKey)
+    .order('date', { ascending: true })
+
+  if (error) {
+    console.error('getDailyRebatesInRange error:', error)
+    return []
+  }
+
+  return data ?? []
+}
+
+/**
+ * Returns same-day month-over-month comparison.
+ *
+ * If today is May 14, returns:
+ *   - current_mtd: sum of daily rebates May 1 → May 14
+ *   - previous_period_same_days: sum of daily rebates April 1 → April 14
+ *   - delta_pct: percentage change (positive = growth, negative = decline)
+ *   - delta_absolute: dollar change
+ *
+ * Returns null for previous_period if no data exists for that range.
+ * Handles month-end edge cases: if current is March 31, previous compares
+ * March 1 → March 31 vs Feb 1 → Feb 28 (uses min of available days).
+ */
+export async function getSameDayComparison(): Promise<{
+  current_mtd_rebate: number
+  previous_period_rebate: number | null
+  delta_pct: number | null
+  delta_absolute: number | null
+  days_in_current_period: number
+  today: string
+}> {
+  const today = new Date()
+  const currentDay = today.getDate()
+  const currentMonthStart = new Date(today.getFullYear(), today.getMonth(), 1)
+
+  // Previous month: same year unless January, then previous year December
+  const previousMonthStart = new Date(today.getFullYear(), today.getMonth() - 1, 1)
+
+  // Determine the comparable end day in previous month
+  // (handle Feb 28/29 → Mar 30/31 edge cases by clamping)
+  const previousMonthLastDay = new Date(
+    today.getFullYear(),
+    today.getMonth(),
+    0
+  ).getDate()
+  const comparableDay = Math.min(currentDay, previousMonthLastDay)
+  const previousMonthEnd = new Date(
+    previousMonthStart.getFullYear(),
+    previousMonthStart.getMonth(),
+    comparableDay
+  )
+
+  // Fetch both ranges
+  const [currentRows, previousRows] = await Promise.all([
+    getDailyRebatesInRange(currentMonthStart, today),
+    getDailyRebatesInRange(previousMonthStart, previousMonthEnd),
+  ])
+
+  const currentMtdRebate = currentRows.reduce(
+    (sum, r) => sum + Number(r.total_rebate_usd ?? 0),
+    0
+  )
+
+  const previousPeriodRebate =
+    previousRows.length === 0
+      ? null
+      : previousRows.reduce((sum, r) => sum + Number(r.total_rebate_usd ?? 0), 0)
+
+  let deltaAbsolute: number | null = null
+  let deltaPct: number | null = null
+
+  if (previousPeriodRebate !== null) {
+    deltaAbsolute = currentMtdRebate - previousPeriodRebate
+    deltaPct =
+      previousPeriodRebate === 0
+        ? null  // Can't compute % change from zero — return null instead of Infinity
+        : (deltaAbsolute / previousPeriodRebate) * 100
+  }
+
+  return {
+    current_mtd_rebate: currentMtdRebate,
+    previous_period_rebate: previousPeriodRebate,
+    delta_pct: deltaPct,
+    delta_absolute: deltaAbsolute,
+    days_in_current_period: currentDay,
+    today: today.toISOString().slice(0, 10),
+  }
+}
+
+/**
+ * Returns per-sub-affiliate override contributions for the current operator,
+ * sorted by override earnings descending.
+ *
+ * Used by the Top Contributors section of the earnings page. Shows which
+ * direct sub-affiliates are generating the most override income for the
+ * current operator.
+ *
+ * Returns empty array if no sub-affiliates exist.
+ *
+ * Data sources:
+ * - tree_relationships: find direct sub-affiliates (depth = 1)
+ * - profiles: get their name, tier, allocated_rebate
+ * - tree_monthly_aggregates: get their tree_volume_lots for the period
+ *
+ * Override math: (my_rate − their_rate) × their_tree_volume_lots
+ */
+export async function getCurrentUserTopContributors(monthYear?: Date): Promise<
+  Array<{
+    sub_affiliate_id: string
+    sub_affiliate_name: string
+    sub_affiliate_tier: VelorixTier | null
+    sub_affiliate_rebate: number
+    tree_volume_lots: number
+    override_per_lot: number
+    override_earnings: number
+    contribution_pct: number
+  }>
+> {
+  const supabase = await createClient()
+  const {
+    data: { user },
+  } = await supabase.auth.getUser()
+
+  if (!user) {
+    redirect('/auth/login')
+  }
+
+  // Get the operator's own profile for their rebate rate
+  const ownProfile = await getCurrentUserProfile()
+  const ownRebate = Number(ownProfile.allocated_rebate ?? 0)
+
+  // Find all direct sub-affiliates (depth = 1 in tree_relationships)
+  const { data: directSubsRel, error: relError } = await supabase
+    .from('tree_relationships')
+    .select('descendant_id')
+    .eq('ancestor_id', user.id)
+    .eq('depth', 1)
+
+  if (relError || !directSubsRel || directSubsRel.length === 0) {
+    return []
+  }
+
+  const subIds = directSubsRel.map((r) => r.descendant_id)
+
+  // Get their profile info
+  const { data: subProfiles, error: profilesError } = await supabase
+    .from('profiles')
+    .select('id, display_name, full_name, velorix_tier, allocated_rebate')
+    .in('id', subIds)
+
+  if (profilesError || !subProfiles) {
+    return []
+  }
+
+  // Get this month's tree volume for each direct sub-affiliate
+  const targetMonth = monthYear ?? new Date()
+  const firstOfMonth = new Date(targetMonth.getFullYear(), targetMonth.getMonth(), 1)
+    .toISOString()
+    .slice(0, 10)
+
+  const { data: aggregates, error: aggError } = await supabase
+    .from('tree_monthly_aggregates')
+    .select('operator_id, tree_volume_lots')
+    .in('operator_id', subIds)
+    .eq('month_year', firstOfMonth)
+
+  if (aggError) {
+    console.error('getCurrentUserTopContributors aggregates error:', aggError)
+    return []
+  }
+
+  // Build lookup from aggregates
+  const volumeBySubId = new Map<string, number>()
+  for (const agg of aggregates ?? []) {
+    volumeBySubId.set(agg.operator_id, Number(agg.tree_volume_lots ?? 0))
+  }
+
+  // Compute override contribution per sub-affiliate
+  const contributions = subProfiles.map((sub) => {
+    const subRebate = Number(sub.allocated_rebate ?? 0)
+    const treeVolume = volumeBySubId.get(sub.id) ?? 0
+    const overridePerLot = Math.max(0, ownRebate - subRebate)
+    const overrideEarnings = overridePerLot * treeVolume
+
+    return {
+      sub_affiliate_id: sub.id,
+      sub_affiliate_name: sub.display_name || sub.full_name || 'Unnamed',
+      sub_affiliate_tier: sub.velorix_tier as VelorixTier | null,
+      sub_affiliate_rebate: subRebate,
+      tree_volume_lots: treeVolume,
+      override_per_lot: overridePerLot,
+      override_earnings: overrideEarnings,
+      contribution_pct: 0, // filled in after totals known
+    }
+  })
+
+  // Sort by override earnings descending
+  contributions.sort((a, b) => b.override_earnings - a.override_earnings)
+
+  // Compute contribution percentages
+  const totalOverride = contributions.reduce((sum, c) => sum + c.override_earnings, 0)
+  if (totalOverride > 0) {
+    for (const c of contributions) {
+      c.contribution_pct = (c.override_earnings / totalOverride) * 100
+    }
+  }
+
+  return contributions
 }

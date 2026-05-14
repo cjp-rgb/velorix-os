@@ -161,6 +161,47 @@ export type Database = {
           },
         ]
       }
+      daily_rebate_snapshots: {
+        Row: {
+          created_at: string
+          date: string
+          id: number
+          notional_value_usd: number | null
+          operator_id: string
+          source_upload_id: string | null
+          total_rebate_usd: number | null
+          updated_at: string
+        }
+        Insert: {
+          created_at?: string
+          date: string
+          id?: number
+          notional_value_usd?: number | null
+          operator_id: string
+          source_upload_id?: string | null
+          total_rebate_usd?: number | null
+          updated_at?: string
+        }
+        Update: {
+          created_at?: string
+          date?: string
+          id?: number
+          notional_value_usd?: number | null
+          operator_id?: string
+          source_upload_id?: string | null
+          total_rebate_usd?: number | null
+          updated_at?: string
+        }
+        Relationships: [
+          {
+            foreignKeyName: "daily_rebate_snapshots_operator_id_fkey"
+            columns: ["operator_id"]
+            isOneToOne: false
+            referencedRelation: "profiles"
+            referencedColumns: ["id"]
+          },
+        ]
+      }
       data_uploads: {
         Row: {
           created_at: string

@@ -28,6 +28,9 @@ export type DataUpload = Database['public']['Tables']['data_uploads']['Row']
 export type AuditLogEntry = Database['public']['Tables']['audit_log']['Row']
 export type Notification = Database['public']['Tables']['notifications']['Row']
 
+export type DailyRebateSnapshot = Database['public']['Tables']['daily_rebate_snapshots']['Row']
+export type DailyRebateSnapshotInsert = Database['public']['Tables']['daily_rebate_snapshots']['Insert']
+
 export type ContentTemplate = Database['public']['Tables']['content_templates']['Row']
 export type GeneratedContent = Database['public']['Tables']['generated_content']['Row']
 
