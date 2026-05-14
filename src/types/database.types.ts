@@ -544,7 +544,9 @@ export type Database = {
           id: string
           instagram_handle: string | null
           master_operator_id: string | null
+          notification_preferences: Json
           onboarding_progress: Json | null
+          operator_class: string | null
           phone: string | null
           profile_photo_url: string | null
           pu_prime_aff_id: string | null
@@ -569,7 +571,9 @@ export type Database = {
           id: string
           instagram_handle?: string | null
           master_operator_id?: string | null
+          notification_preferences?: Json
           onboarding_progress?: Json | null
+          operator_class?: string | null
           phone?: string | null
           profile_photo_url?: string | null
           pu_prime_aff_id?: string | null
@@ -594,7 +598,9 @@ export type Database = {
           id?: string
           instagram_handle?: string | null
           master_operator_id?: string | null
+          notification_preferences?: Json
           onboarding_progress?: Json | null
+          operator_class?: string | null
           phone?: string | null
           profile_photo_url?: string | null
           pu_prime_aff_id?: string | null
