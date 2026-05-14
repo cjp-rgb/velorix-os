@@ -5,6 +5,8 @@ import { OrbitControls } from '@react-three/drei'
 import { useRef, useMemo } from 'react'
 import * as THREE from 'three'
 import type { VelorixTier } from '@/types/velorix'
+import { EffectComposer, Bloom } from '@react-three/postprocessing'
+import { KernelSize } from 'postprocessing'
 
 type NetDepositSphereProps = {
   treeNetDeposits: number
@@ -25,8 +27,8 @@ const SCALE_ACCENT_COLOR = new THREE.Color('#D4AF37')
 const HALO_COLOR = new THREE.Color('#00C2FF')
 
 function calculateSphereRadius(treeNetDeposits: number): number {
-  const minRadius = 1.4
-  const maxRadius = 2.2
+  const minRadius = 1.8
+  const maxRadius = 2.4
   const minDeposits = 100
   const maxDeposits = 500_000
 
@@ -41,8 +43,8 @@ function calculateSphereRadius(treeNetDeposits: number): number {
 }
 
 function calculateInnerParticleCount(treeVolumeLots: number): number {
-  const minParticles = 1500
-  const maxParticles = 4000
+  const minParticles = 2500
+  const maxParticles = 4500
   const maxVolume = 1000
 
   if (treeVolumeLots <= 0) return minParticles
@@ -53,7 +55,7 @@ function calculateInnerParticleCount(treeVolumeLots: number): number {
 }
 
 function calculateHaloParticleCount(activeMemberCount: number): number {
-  const minParticles = 100
+  const minParticles = 250
   const maxParticles = 1000
   const maxMembers = 100
 
@@ -143,10 +145,10 @@ function InnerSphere({
         />
       </bufferGeometry>
       <pointsMaterial
-        size={0.04}
+        size={0.055}
         sizeAttenuation
         transparent
-        opacity={0.9}
+        opacity={1.0}
         vertexColors
         blending={THREE.AdditiveBlending}
         depthWrite={false}
@@ -200,10 +202,10 @@ function OuterHalo({
       </bufferGeometry>
       <pointsMaterial
         color={HALO_COLOR}
-        size={0.025}
+        size={0.035}
         sizeAttenuation
         transparent
-        opacity={0.4}
+        opacity={0.55}
         blending={THREE.AdditiveBlending}
         depthWrite={false}
       />
@@ -244,6 +246,15 @@ export function NetDepositSphere({
           autoRotate={false}
           dampingFactor={0.1}
         />
+        <EffectComposer>
+          <Bloom
+            intensity={1.2}
+            luminanceThreshold={0.15}
+            luminanceSmoothing={0.9}
+            kernelSize={KernelSize.LARGE}
+            mipmapBlur
+          />
+        </EffectComposer>
       </Canvas>
     </div>
   )
