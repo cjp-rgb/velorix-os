@@ -777,3 +777,33 @@ export async function getOperatorBotConnection(): Promise<{
     connected_at: typeof config.connected_at === 'string' ? config.connected_at : null,
   }
 }
+
+/**
+ * Marks the current operator's onboarding as complete.
+ *
+ * Sets profiles.onboarding_completed_at to the current timestamp.
+ * Idempotent — calling again does nothing meaningful (timestamp updates
+ * but the banner is already hidden either way).
+ *
+ * Used by the dismissal button on the dashboard onboarding banner.
+ */
+export async function markOnboardingComplete(): Promise<void> {
+  const supabase = await createClient()
+  const {
+    data: { user },
+  } = await supabase.auth.getUser()
+
+  if (!user) {
+    redirect('/auth/login')
+  }
+
+  const { error } = await supabase
+    .from('profiles')
+    .update({ onboarding_completed_at: new Date().toISOString() })
+    .eq('id', user.id)
+
+  if (error) {
+    console.error('markOnboardingComplete error:', error)
+    throw new Error(error.message ?? 'Failed to mark onboarding complete')
+  }
+}

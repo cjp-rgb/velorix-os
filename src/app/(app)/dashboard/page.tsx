@@ -3,17 +3,22 @@ import {
   getCurrentUserProfile,
   getCurrentUserMonthlyPerformance,
   getCurrentUserTreeAggregate,
+  getOperatorBotConnection,
 } from '@/lib/velorix/data'
 import { StatCard } from '@/components/ui/StatCard'
 import { formatUSD, formatLots, formatTier, formatRebate } from '@/lib/format'
 import { Users, TrendingUp, DollarSign, Network } from 'lucide-react'
 import { NetDepositSphere } from '@/components/NetDepositSphereClient'
 import { TierTracker } from '@/components/TierTracker'
+import { OnboardingBanner } from '@/components/OnboardingBanner'
 
 export default async function DashboardPage() {
-  const profile = await getCurrentUserProfile()
-  const monthly = await getCurrentUserMonthlyPerformance()
-  const treeAgg = await getCurrentUserTreeAggregate()
+  const [profile, monthly, treeAgg, botConnection] = await Promise.all([
+    getCurrentUserProfile(),
+    getCurrentUserMonthlyPerformance(),
+    getCurrentUserTreeAggregate(),
+    getOperatorBotConnection(),
+  ])
 
   // Sub-affiliates use a different dashboard (built in Phase 3).
   // Route protection: redirect them to their lite dashboard.
@@ -34,8 +39,50 @@ export default async function DashboardPage() {
   const treeActiveMembers = treeAgg?.tree_active_member_count ?? 0
   const treeVolume = Number(treeAgg?.tree_volume_lots ?? 0)
 
+  const showOnboarding = profile.onboarding_completed_at === null
+
+  const onboardingCards = showOnboarding
+    ? [
+        {
+          key: 'connect_bot',
+          iconName: 'bot' as const,
+          label: 'Connect your Telegram bot',
+          description: 'Required for all automations',
+          href: '/settings/integrations',
+          isComplete: botConnection?.is_enabled === true,
+        },
+        {
+          key: 'complete_profile',
+          iconName: 'id_card' as const,
+          label: 'Complete your profile',
+          description: 'Display name, country, timezone',
+          href: '/settings/account',
+          isComplete:
+            !!profile.display_name && !!profile.country && !!profile.timezone,
+        },
+        {
+          key: 'view_earnings',
+          iconName: 'trending_up' as const,
+          label: 'Explore your earnings page',
+          description: 'MTD performance + month-over-month',
+          href: '/dashboard/earnings',
+          isComplete: false,
+        },
+        {
+          key: 'review_clients',
+          iconName: 'users' as const,
+          label: 'Review your clients',
+          description: 'See journey states and status',
+          href: '/dashboard/clients',
+          isComplete: false,
+        },
+      ]
+    : []
+
   return (
     <div className="px-4 md:px-8 py-6 md:py-10 max-w-7xl mx-auto">
+      {showOnboarding && <OnboardingBanner cards={onboardingCards} />}
+
       {/* Header */}
       <div className="mb-8 md:mb-12">
         <p className="text-sm text-text-dim font-mono">

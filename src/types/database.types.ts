@@ -545,6 +545,7 @@ export type Database = {
           instagram_handle: string | null
           master_operator_id: string | null
           notification_preferences: Json
+          onboarding_completed_at: string | null
           onboarding_progress: Json | null
           operator_class: string | null
           phone: string | null
@@ -572,6 +573,7 @@ export type Database = {
           instagram_handle?: string | null
           master_operator_id?: string | null
           notification_preferences?: Json
+          onboarding_completed_at?: string | null
           onboarding_progress?: Json | null
           operator_class?: string | null
           phone?: string | null
@@ -599,6 +601,7 @@ export type Database = {
           instagram_handle?: string | null
           master_operator_id?: string | null
           notification_preferences?: Json
+          onboarding_completed_at?: string | null
           onboarding_progress?: Json | null
           operator_class?: string | null
           phone?: string | null
