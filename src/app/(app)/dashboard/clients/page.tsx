@@ -27,6 +27,9 @@ function getJourneyStyle(journey: string | null): JourneyStyle {
 }
 
 export default async function ClientsPage() {
+  // NOTE: Sequential awaits intentional here. The role check between the two
+  // awaits redirects sub_affiliates before fetching client data, avoiding a
+  // wasted query on the redirect path. Do not parallelise.
   const profile = await getCurrentUserProfile()
 
   if (profile.role === 'sub_affiliate') {

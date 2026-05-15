@@ -1,46 +1,20 @@
 import { redirect } from 'next/navigation'
-import { createClient } from '@/lib/supabase/server'
+import { getCurrentUserProfile } from '@/lib/velorix/data'
 import { Sidebar } from '@/components/layout/Sidebar'
 import { AppHeader } from '@/components/layout/AppHeader'
 import { BottomTabs } from '@/components/layout/BottomTabs'
 import { PWAInstallPrompt } from '@/components/PWAInstallPrompt'
-
-type ProfileShape = {
-  id: string
-  full_name: string
-  display_name: string | null
-  email: string
-  role: 'admin' | 'master' | 'sub_affiliate'
-  velorix_tier: 'entry' | 'growth' | 'scale' | null
-  profile_photo_url: string | null
-  account_status: 'pending' | 'active' | 'terminated'
-}
 
 export async function AppShell({
   children,
 }: {
   children: React.ReactNode
 }) {
-  const supabase = await createClient()
-  const {
-    data: { user },
-  } = await supabase.auth.getUser()
-
-  if (!user) {
-    redirect('/auth/login')
-  }
-
-  const { data, error } = await supabase
-    .from('profiles')
-    .select('id, full_name, display_name, email, role, velorix_tier, profile_photo_url, account_status')
-    .eq('id', user.id)
-    .single()
-
-  if (error || !data) {
-    redirect('/auth/login')
-  }
-
-  const profile = data as ProfileShape
+  // getCurrentUserProfile handles the missing-user redirect to /auth/login
+  // internally; throws for missing-profile (data-integrity bug — surfaces via
+  // Next.js error boundary, which is the desired louder signal for a state
+  // that should never happen in production).
+  const profile = await getCurrentUserProfile()
 
   if (profile.account_status === 'terminated') {
     redirect('/auth/terminated')

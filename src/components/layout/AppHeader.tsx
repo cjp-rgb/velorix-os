@@ -2,8 +2,9 @@
 
 import Link from 'next/link'
 import { useEffect, useRef, useState } from 'react'
-import { Bell } from 'lucide-react'
+import { Bell, Menu } from 'lucide-react'
 import { signOut } from '@/lib/auth/actions'
+import { NavDrawer } from './NavDrawer'
 import { cn } from '@/lib/utils'
 
 type AppHeaderProps = {
@@ -13,6 +14,7 @@ type AppHeaderProps = {
     display_name: string | null
     email: string
     profile_photo_url: string | null
+    role: string
   }
   pageTitle?: string
   notificationCount?: number
@@ -133,30 +135,52 @@ function UserMenu({ user }: { user: AppHeaderProps['user'] }) {
 }
 
 export function AppHeader({ user, pageTitle, notificationCount }: AppHeaderProps) {
-  return (
-    <header
-      className={cn(
-        'fixed inset-x-0 top-0 z-30 h-14 border-b border-border bg-bg/80 backdrop-blur-md',
-        'md:left-[240px] md:h-16'
-      )}
-    >
-      {/* Mobile */}
-      <div className="flex h-full items-center justify-between px-4 md:hidden">
-        <div className="w-9" aria-hidden="true" />
-        <Link href="/dashboard" className="flex items-baseline">
-          <span className="font-display font-semibold text-text">Velorix</span>
-        </Link>
-        <NotificationBell count={notificationCount} />
-      </div>
+  const [isDrawerOpen, setIsDrawerOpen] = useState(false)
 
-      {/* Desktop */}
-      <div className="hidden h-full items-center justify-between px-6 md:flex">
-        <h1 className="font-display text-base font-semibold text-text">{pageTitle ?? ''}</h1>
-        <div className="flex items-center gap-2">
+  return (
+    <>
+      <header
+        className={cn(
+          'fixed inset-x-0 top-0 z-30 h-14 border-b border-border bg-bg/80 backdrop-blur-md',
+          'md:left-[240px] md:h-16'
+        )}
+      >
+        {/* Mobile */}
+        <div className="flex h-full items-center justify-between px-4 md:hidden">
+          <button
+            type="button"
+            onClick={() => setIsDrawerOpen(true)}
+            className="p-2 -ml-2 text-text-dim hover:text-text transition-colors md:hidden"
+            aria-label="Open navigation menu"
+          >
+            <Menu className="w-5 h-5" />
+          </button>
+          <Link href="/dashboard" className="flex items-baseline">
+            <span className="font-display font-semibold text-text">Velorix</span>
+          </Link>
           <NotificationBell count={notificationCount} />
-          <UserMenu user={user} />
         </div>
-      </div>
-    </header>
+
+        {/* Desktop */}
+        <div className="hidden h-full items-center justify-between px-6 md:flex">
+          <h1 className="font-display text-base font-semibold text-text">{pageTitle ?? ''}</h1>
+          <div className="flex items-center gap-2">
+            <NotificationBell count={notificationCount} />
+            <UserMenu user={user} />
+          </div>
+        </div>
+      </header>
+
+      <NavDrawer
+        isOpen={isDrawerOpen}
+        onClose={() => setIsDrawerOpen(false)}
+        user={{
+          full_name: user.full_name,
+          display_name: user.display_name,
+          email: user.email,
+          role: user.role,
+        }}
+      />
+    </>
   )
 }

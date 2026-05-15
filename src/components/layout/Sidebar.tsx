@@ -2,20 +2,10 @@
 
 import Link from 'next/link'
 import { usePathname } from 'next/navigation'
-import {
-  LayoutDashboard,
-  TrendingUp,
-  UserCircle,
-  Network,
-  Sparkles,
-  GraduationCap,
-  Zap,
-  Settings as SettingsIcon,
-  Shield,
-  LogOut,
-} from 'lucide-react'
+import { LogOut } from 'lucide-react'
 import { signOut } from '@/lib/auth/actions'
 import { Badge } from '@/components/ui/Badge'
+import { getNavItemsForRole } from './nav-items'
 import { cn } from '@/lib/utils'
 
 type SidebarProps = {
@@ -29,17 +19,6 @@ type SidebarProps = {
   }
   className?: string
 }
-
-const baseNavItems = [
-  { label: 'Dashboard', href: '/dashboard', icon: LayoutDashboard },
-  { label: 'Earnings', href: '/dashboard/earnings', icon: TrendingUp },
-  { label: 'Clients', href: '/dashboard/clients', icon: UserCircle },
-  { label: 'Downline', href: '/dashboard/downline', icon: Network },
-  { label: 'Content', href: '/content', icon: Sparkles },
-  { label: 'Education', href: '/education', icon: GraduationCap },
-  { label: 'Automations', href: '/automations', icon: Zap },
-  { label: 'Settings', href: '/settings', icon: SettingsIcon },
-] as const
 
 const roleLabel = {
   admin: 'Admin',
@@ -67,12 +46,7 @@ export function Sidebar({ user, className }: SidebarProps) {
   const pathname = usePathname()
   const displayName = user.display_name ?? user.full_name
 
-  const navItems = [
-    ...baseNavItems,
-    ...(user.role === 'admin'
-      ? ([{ label: 'Admin', href: '/admin', icon: Shield }] as const)
-      : []),
-  ]
+  const navItems = getNavItemsForRole(user.role)
 
   return (
     <aside
