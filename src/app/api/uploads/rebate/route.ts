@@ -3,12 +3,12 @@ import * as XLSX from 'xlsx'
 import { createClient } from '@/lib/supabase/server'
 import type { Database } from '@/types/database.types'
 
-// Increase body size limit for this route — default is 1MB, rebate reports can be 5.8MB+
-export const maxDuration = 60  // seconds — parsing 15k rows can take 10-15s
+// Parsing 15k rows can take 10-15s; default 10s isn't enough.
+export const maxDuration = 60
 
 type ParsedTradeRow = {
   account_id: number
-  trade_date: string  // ISO date string
+  trade_date: string
   instrument: string
   notional_value_usd: number
   rebate_usd: number
@@ -30,20 +30,26 @@ type ParseResult = {
   total_rows_in_sheet: number
 }
 
-/**
- * Safely coerces a value to a finite number. Returns null on failure.
- */
+type AggregatedDailyVolume = {
+  account_id: number
+  trade_date: string
+  instrument: string
+  total_volume: number
+  total_notional_usd: number
+  total_rebate_usd: number
+  trade_count: number
+  user_id: number | null
+  client_name: string | null
+  lots_type: string | null
+  campaign_source: string | null
+}
+
 function safeNumber(value: unknown): number | null {
   if (value === null || value === undefined || value === '') return null
   const num = typeof value === 'number' ? value : Number(value)
   return Number.isFinite(num) ? num : null
 }
 
-/**
- * Coerces a PU Prime date value into ISO date string (YYYY-MM-DD).
- * Handles: native Date objects (Excel converts dates), string formats like
- * '2026-04-22' or '22/04/2026'. Returns null if unparseable.
- */
 function safeDate(value: unknown): string | null {
   if (value === null || value === undefined || value === '') return null
   if (value instanceof Date) {
@@ -51,12 +57,10 @@ function safeDate(value: unknown): string | null {
   }
   if (typeof value === 'string') {
     const trimmed = value.trim()
-    // Try ISO format first
     if (/^\d{4}-\d{2}-\d{2}/.test(trimmed)) {
       const parsed = new Date(trimmed)
       return Number.isFinite(parsed.getTime()) ? parsed.toISOString().slice(0, 10) : null
     }
-    // Try DD/MM/YYYY format (common PU Prime format)
     const dmy = trimmed.match(/^(\d{2})\/(\d{2})\/(\d{4})$/)
     if (dmy) {
       return `${dmy[3]}-${dmy[2]}-${dmy[1]}`
@@ -66,8 +70,8 @@ function safeDate(value: unknown): string | null {
 }
 
 /**
- * Parses the rebate XLSX 'account rebate' sheet into trade rows.
- * Rejects only rows where we can't safely insert (missing critical fields).
+ * Parse the 'account rebate' sheet into typed rows. Rejects rows that can't
+ * be safely inserted (missing date, account_id, instrument, notional, rebate).
  */
 function parseRebateXlsx(buffer: ArrayBuffer): ParseResult {
   const workbook = XLSX.read(buffer, { type: 'array', cellDates: true })
@@ -80,18 +84,18 @@ function parseRebateXlsx(buffer: ArrayBuffer): ParseResult {
 
   const sheet = workbook.Sheets['account rebate']
   if (!sheet) {
-    throw new Error("Could not access 'account rebate' sheet contents")
+    throw new Error("'account rebate' sheet is empty or unreadable")
   }
+
   const rows = XLSX.utils.sheet_to_json<Record<string, unknown>>(sheet, {
     defval: null,
-    raw: false,  // string-format consistently so date parsing is predictable
+    raw: false,
   })
 
   const parsed: ParsedTradeRow[] = []
   const rejections: RejectionReason[] = []
 
   rows.forEach((row, index) => {
-    // Row index is 0-based after header; user sees 1-based + 1 for header = +2
     const rowNumber = index + 2
 
     const accountId = safeNumber(row['Account'])
@@ -101,7 +105,6 @@ function parseRebateXlsx(buffer: ArrayBuffer): ParseResult {
     const notionalValue = safeNumber(row['Notional ValueUSD'])
     const rebate = safeNumber(row['Rebate(USD)'])
 
-    // Reject if any critical field is missing/unparseable
     if (accountId === null) {
       rejections.push({ row: rowNumber, reason: 'Missing or invalid Account ID' })
       return
@@ -156,22 +159,53 @@ function parseRebateXlsx(buffer: ArrayBuffer): ParseResult {
 }
 
 /**
- * Resolves account_id → operator_id by looking up the most recent
- * client_snapshots row for each account.
- *
- * On first upload (before any ib_accounts has been uploaded), all
- * lookups return null. That's fine — rows are inserted with
- * operator_id=NULL and can be reconciled later.
+ * Aggregate parsed trade rows by (account_id, trade_date, instrument).
+ * Each row in the aggregate represents that account's total activity on
+ * that instrument that day, summing volume/notional/rebate across trades.
+ */
+function aggregateToDaily(rows: ParsedTradeRow[]): AggregatedDailyVolume[] {
+  const map = new Map<string, AggregatedDailyVolume>()
+
+  for (const row of rows) {
+    const key = `${row.account_id}|${row.trade_date}|${row.instrument}`
+    const existing = map.get(key)
+    if (existing) {
+      existing.total_volume += row.total_volume ?? 0
+      existing.total_notional_usd += row.notional_value_usd
+      existing.total_rebate_usd += row.rebate_usd
+      existing.trade_count += 1
+    } else {
+      map.set(key, {
+        account_id: row.account_id,
+        trade_date: row.trade_date,
+        instrument: row.instrument,
+        total_volume: row.total_volume ?? 0,
+        total_notional_usd: row.notional_value_usd,
+        total_rebate_usd: row.rebate_usd,
+        trade_count: 1,
+        user_id: row.user_id,
+        client_name: row.client_name,
+        lots_type: row.lots_type,
+        campaign_source: row.campaign_source,
+      })
+    }
+  }
+
+  return Array.from(map.values())
+}
+
+/**
+ * Resolve account_id → operator_id by looking up most recent
+ * client_snapshots row per account. Returns empty map if client_snapshots
+ * is empty (first upload scenario).
  */
 async function resolveOperatorIds(
-  supabase: ReturnType<typeof createClient> extends Promise<infer T> ? T : never,
+  supabase: Awaited<ReturnType<typeof createClient>>,
   accountIds: number[]
 ): Promise<Map<number, string>> {
   const map = new Map<number, string>()
   if (accountIds.length === 0) return map
 
-  // Get the most recent operator_id for each account from client_snapshots
-  // Note: this may miss accounts if client_snapshots is empty (first upload)
   const { data, error } = await supabase
     .from('client_snapshots')
     .select('account_id, operator_id, snapshot_date')
@@ -181,7 +215,6 @@ async function resolveOperatorIds(
 
   if (error || !data) return map
 
-  // First occurrence per account_id wins (most recent snapshot due to order)
   for (const row of data) {
     if (!map.has(row.account_id) && row.operator_id) {
       map.set(row.account_id, row.operator_id)
@@ -194,7 +227,6 @@ async function resolveOperatorIds(
 export async function POST(req: NextRequest) {
   const supabase = await createClient()
 
-  // Admin gate
   const {
     data: { user },
   } = await supabase.auth.getUser()
@@ -212,7 +244,6 @@ export async function POST(req: NextRequest) {
     return NextResponse.json({ error: 'Forbidden' }, { status: 403 })
   }
 
-  // Extract file
   const formData = await req.formData()
   const file = formData.get('file')
 
@@ -223,7 +254,6 @@ export async function POST(req: NextRequest) {
     )
   }
 
-  // Create data_uploads row in 'processing' state
   const { data: uploadRow, error: uploadError } = await supabase
     .from('data_uploads')
     .insert({
@@ -249,80 +279,83 @@ export async function POST(req: NextRequest) {
   const uploadId = uploadRow.id
 
   try {
-    // Parse the XLSX
     const buffer = await file.arrayBuffer()
     const { parsed_rows, rejections, total_rows_in_sheet } = parseRebateXlsx(buffer)
 
-    // Resolve operators for all unique accounts
-    const uniqueAccounts = Array.from(new Set(parsed_rows.map((r) => r.account_id)))
+    // Aggregate to (account, date, instrument) granularity
+    const aggregated = aggregateToDaily(parsed_rows)
+
+    // Resolve operators for unique accounts (one batch query)
+    const uniqueAccounts = Array.from(new Set(aggregated.map((r) => r.account_id)))
     const operatorMap = await resolveOperatorIds(supabase, uniqueAccounts)
 
-    // Build client_trades insert payload
-    const tradeInserts = parsed_rows.map((row) => ({
+    // Build client_daily_volume insert payload
+    const volumeInserts = aggregated.map((row) => ({
       account_id: row.account_id,
       trade_date: row.trade_date,
       instrument: row.instrument,
-      notional_value_usd: row.notional_value_usd,
-      rebate_usd: row.rebate_usd,
       total_volume: row.total_volume,
-      lots_type: row.lots_type,
+      total_notional_usd: row.total_notional_usd,
+      total_rebate_usd: row.total_rebate_usd,
+      trade_count: row.trade_count,
       user_id: row.user_id,
       client_name: row.client_name,
+      lots_type: row.lots_type,
       campaign_source: row.campaign_source,
       operator_id: operatorMap.get(row.account_id) ?? null,
       source_upload_id: uploadId,
     }))
 
-    // Upsert client_trades in batches (Supabase has a 1000-row limit per upsert)
+    // Upsert in batches of 500
     const BATCH_SIZE = 500
-    let tradesImported = 0
-    for (let i = 0; i < tradeInserts.length; i += BATCH_SIZE) {
-      const batch = tradeInserts.slice(i, i + BATCH_SIZE)
-      const { error: batchError } = await supabase.from('client_trades').upsert(batch, {
-        onConflict: 'account_id,trade_date,instrument,notional_value_usd,rebate_usd',
-      })
+    let volumeImported = 0
+    for (let i = 0; i < volumeInserts.length; i += BATCH_SIZE) {
+      const batch = volumeInserts.slice(i, i + BATCH_SIZE)
+      const { error: batchError } = await supabase
+        .from('client_daily_volume')
+        .upsert(batch, {
+          onConflict: 'account_id,trade_date,instrument',
+        })
       if (batchError) {
-        throw new Error(`Failed to upsert client_trades batch: ${batchError.message}`)
+        throw new Error(
+          `Failed to upsert client_daily_volume batch: ${batchError.message}`
+        )
       }
-      tradesImported += batch.length
+      volumeImported += batch.length
     }
 
-    // Aggregate to daily totals per operator (in-memory)
-    // Key: `${operator_id}|${trade_date}` — operator_id can be null for unresolved accounts
-    const dailyAgg = new Map<
+    // Aggregate further: (operator, date) for daily_rebate_snapshots
+    // Only rows with resolved operator make it through (FK constraint).
+    const dailyOperatorAgg = new Map<
       string,
-      { operator_id: string | null; date: string; rebate: number; notional: number }
+      { operator_id: string; date: string; rebate: number; notional: number }
     >()
 
-    for (const row of parsed_rows) {
-      const opId = operatorMap.get(row.account_id) ?? null
-      const key = `${opId ?? 'null'}|${row.trade_date}`
-      const existing = dailyAgg.get(key)
+    for (const row of aggregated) {
+      const opId = operatorMap.get(row.account_id)
+      if (!opId) continue
+      const key = `${opId}|${row.trade_date}`
+      const existing = dailyOperatorAgg.get(key)
       if (existing) {
-        existing.rebate += row.rebate_usd
-        existing.notional += row.notional_value_usd
+        existing.rebate += row.total_rebate_usd
+        existing.notional += row.total_notional_usd
       } else {
-        dailyAgg.set(key, {
+        dailyOperatorAgg.set(key, {
           operator_id: opId,
           date: row.trade_date,
-          rebate: row.rebate_usd,
-          notional: row.notional_value_usd,
+          rebate: row.total_rebate_usd,
+          notional: row.total_notional_usd,
         })
       }
     }
 
-    // Upsert daily_rebate_snapshots — but ONLY for resolved operators
-    // (the table has operator_id NOT NULL via FK, so unresolved rows are
-    // dropped here. They're still preserved in client_trades.)
-    const dailyInserts = Array.from(dailyAgg.values())
-      .filter((agg) => agg.operator_id !== null)
-      .map((agg) => ({
-        operator_id: agg.operator_id!,
-        date: agg.date,
-        total_rebate_usd: agg.rebate,
-        notional_value_usd: agg.notional,
-        source_upload_id: uploadId,
-      }))
+    const dailyInserts = Array.from(dailyOperatorAgg.values()).map((agg) => ({
+      operator_id: agg.operator_id,
+      date: agg.date,
+      total_rebate_usd: agg.rebate,
+      notional_value_usd: agg.notional,
+      source_upload_id: uploadId,
+    }))
 
     let snapshotsImported = 0
     if (dailyInserts.length > 0) {
@@ -335,12 +368,19 @@ export async function POST(req: NextRequest) {
       snapshotsImported = dailyInserts.length
     }
 
-    // Update data_uploads row to completed
+    // Count days where operator couldn't be resolved
+    const unresolvedDays = new Set<string>()
+    for (const row of aggregated) {
+      if (!operatorMap.get(row.account_id)) {
+        unresolvedDays.add(row.trade_date)
+      }
+    }
+
     const result = {
       rows_parsed: total_rows_in_sheet,
-      rows_imported: tradesImported,
+      rows_imported: volumeImported,
       rows_rejected: rejections.length,
-      rejection_reasons: rejections.slice(0, 100),  // cap at 100 to keep response small
+      rejection_reasons: rejections.slice(0, 100),
     }
 
     await supabase
@@ -355,19 +395,24 @@ export async function POST(req: NextRequest) {
       })
       .eq('id', uploadId)
 
+    const messageParts = [
+      `Aggregated ${total_rows_in_sheet.toLocaleString()} trades into ${volumeImported.toLocaleString()} (account, date, instrument) rows.`,
+      `${snapshotsImported} daily operator snapshot${snapshotsImported === 1 ? '' : 's'} populated.`,
+    ]
+    if (unresolvedDays.size > 0) {
+      messageParts.push(
+        `${unresolvedDays.size} day(s) had unresolved operator — upload ib_accounts first for full resolution.`
+      )
+    }
+
     return NextResponse.json({
       ...result,
-      message: `Imported ${tradesImported.toLocaleString()} trades and ${snapshotsImported} daily snapshot${snapshotsImported === 1 ? '' : 's'}. ${
-        dailyAgg.size - snapshotsImported > 0
-          ? `${dailyAgg.size - snapshotsImported} day(s) had unresolved operator — upload ib_accounts first for full resolution.`
-          : ''
-      }`,
+      message: messageParts.join(' '),
     })
   } catch (err) {
     const message = err instanceof Error ? err.message : 'Unknown parsing error'
     console.error('Rebate parser error:', err)
 
-    // Mark upload as failed
     await supabase
       .from('data_uploads')
       .update({
