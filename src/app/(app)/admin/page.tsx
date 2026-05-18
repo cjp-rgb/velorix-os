@@ -20,8 +20,7 @@ const ADMIN_LINKS = [
     icon: Upload,
     label: 'Data Uploads',
     description: 'Upload PU Prime XLSX reports to populate the platform',
-    available: false,
-    availabilityNote: 'Building in Phase 2.2',
+    available: true,
   },
   {
     href: '/admin/audit',

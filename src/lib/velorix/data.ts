@@ -9,6 +9,7 @@ import type {
   PuPrimeAccount,
   DailyRebateSnapshot,
   AutomationConfig,
+  DataUpload,
   VelorixTier,
   UserRole,
   AccountStatus,
@@ -955,4 +956,40 @@ export async function updateOperatorByAdmin(args: {
   }
 
   return data as Profile
+}
+
+/**
+ * Returns recent data_uploads filtered by report type. Admin-only.
+ *
+ * Relies on uploads_admin_only RLS policy to authorize.
+ * Returns rows ordered by created_at desc (newest first).
+ *
+ * Used by the upload pages' recent-uploads sidebar.
+ */
+export async function getRecentUploadsForType(
+  reportType: 'sub_ib_report' | 'ib_accounts_report' | 'rebate_report' | 'ib_report',
+  limit: number = 10
+): Promise<DataUpload[]> {
+  const supabase = await createClient()
+  const {
+    data: { user },
+  } = await supabase.auth.getUser()
+
+  if (!user) {
+    redirect('/auth/login')
+  }
+
+  const { data, error } = await supabase
+    .from('data_uploads')
+    .select('*')
+    .eq('report_type', reportType)
+    .order('created_at', { ascending: false })
+    .limit(limit)
+
+  if (error) {
+    console.error('getRecentUploadsForType error:', error)
+    return []
+  }
+
+  return data ?? []
 }
