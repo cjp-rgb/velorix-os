@@ -807,3 +807,152 @@ export async function markOnboardingComplete(): Promise<void> {
     throw new Error(error.message ?? 'Failed to mark onboarding complete')
   }
 }
+
+/**
+ * Returns all profiles for admin views.
+ *
+ * Admin-only — relies on profiles_select_admin RLS policy to authorize.
+ * If a non-admin calls this, RLS will filter the results to only their
+ * own profile + downline, which would be the wrong behavior for admin
+ * UIs. The admin layout gate at /admin/* prevents non-admins from
+ * reaching pages that call this function.
+ *
+ * Returns the full narrowed Profile shape, ordered by created_at desc
+ * (newest profiles first). Includes terminated accounts — the UI
+ * decides whether to filter or visually distinguish them.
+ */
+export async function getAllOperatorsForAdmin(): Promise<Profile[]> {
+  const supabase = await createClient()
+  const {
+    data: { user },
+  } = await supabase.auth.getUser()
+
+  if (!user) {
+    redirect('/auth/login')
+  }
+
+  const { data, error } = await supabase
+    .from('profiles')
+    .select('*')
+    .order('created_at', { ascending: false })
+
+  if (error) {
+    console.error('getAllOperatorsForAdmin error:', error)
+    throw new Error(error.message ?? 'Failed to load operators')
+  }
+
+  return (data ?? []) as Profile[]
+}
+
+/**
+ * Updates an operator's profile fields. Admin-only.
+ *
+ * Editable fields:
+ *   - display_name (operator can also edit their own; admin override is fine)
+ *   - velorix_tier ('entry' | 'growth' | 'scale' | null)
+ *   - account_status ('pending' | 'active' | 'terminated')
+ *   - operator_class ('inner_circle' | 'velorix' | 'migrating')
+ *   - allocated_rebate (decimal as string — Supabase returns DECIMAL as string)
+ *
+ * Validation:
+ *   - allocated_rebate cannot exceed the operator's upline rate.
+ *     Looks up the operator's parent via tree_relationships (depth=1)
+ *     and rejects if the new rate would leave negative override margin.
+ *     If the operator has no upline (top of tree), no cap applies.
+ *
+ * Not editable here:
+ *   - role (sensitive — change via direct SQL if needed)
+ *   - email (managed by Supabase Auth)
+ *   - pu_prime_aff_id (set during onboarding, doesn't change)
+ *   - personal fields (operator's own data — they edit those themselves)
+ *
+ * Security: caller must be admin. The function does not check this itself —
+ * relies on profiles_update_admin RLS policy + the /admin/* layout gate.
+ * If a non-admin somehow reaches this function, RLS will reject the update.
+ *
+ * Returns the updated profile on success. Throws on validation failure or DB error.
+ */
+export async function updateOperatorByAdmin(args: {
+  operator_id: string
+  display_name?: string | null
+  velorix_tier?: VelorixTier | null
+  account_status?: AccountStatus
+  operator_class?: 'inner_circle' | 'velorix' | 'migrating'
+  allocated_rebate?: number | null
+}): Promise<Profile> {
+  const supabase = await createClient()
+  const {
+    data: { user },
+  } = await supabase.auth.getUser()
+
+  if (!user) {
+    redirect('/auth/login')
+  }
+
+  // Validation: allocated_rebate against upline rate
+  if (args.allocated_rebate !== undefined && args.allocated_rebate !== null) {
+    const newRebate = Number(args.allocated_rebate)
+
+    if (!Number.isFinite(newRebate) || newRebate < 0) {
+      throw new Error('Allocated rebate must be a non-negative number')
+    }
+
+    // Find the operator's direct upline (depth = 1)
+    const { data: uplineRel } = await supabase
+      .from('tree_relationships')
+      .select('ancestor_id')
+      .eq('descendant_id', args.operator_id)
+      .eq('depth', 1)
+      .maybeSingle()
+
+    if (uplineRel?.ancestor_id) {
+      // Operator has an upline — fetch upline's allocated_rebate
+      const { data: upline } = await supabase
+        .from('profiles')
+        .select('allocated_rebate, display_name, full_name')
+        .eq('id', uplineRel.ancestor_id)
+        .maybeSingle()
+
+      const uplineRebate = upline?.allocated_rebate
+        ? Number(upline.allocated_rebate)
+        : null
+
+      if (uplineRebate !== null && newRebate > uplineRebate) {
+        const uplineName = upline?.display_name || upline?.full_name || 'upline'
+        throw new Error(
+          `Allocated rebate $${newRebate.toFixed(2)} exceeds ${uplineName}'s rate of $${uplineRebate.toFixed(2)}. Reduce this operator's rebate or increase ${uplineName}'s first.`
+        )
+      }
+    }
+    // If no upline relationship found, operator is at the top of their tree — no cap
+  }
+
+  // Whitelist allowed fields. Drop anything else the caller passed.
+  const safeUpdates: Record<string, unknown> = {}
+  if ('display_name' in args) safeUpdates.display_name = args.display_name
+  if ('velorix_tier' in args) safeUpdates.velorix_tier = args.velorix_tier
+  if ('account_status' in args) safeUpdates.account_status = args.account_status
+  if ('operator_class' in args) safeUpdates.operator_class = args.operator_class
+  if ('allocated_rebate' in args) {
+    safeUpdates.allocated_rebate =
+      args.allocated_rebate === null ? null : Number(args.allocated_rebate)
+  }
+
+  if (Object.keys(safeUpdates).length === 0) {
+    throw new Error('No editable fields provided')
+  }
+
+  const { data, error } = await supabase
+    .from('profiles')
+    .update(safeUpdates)
+    .eq('id', args.operator_id)
+    .select('*')
+    .single()
+
+  if (error || !data) {
+    console.error('updateOperatorByAdmin error:', error)
+    throw new Error(error?.message ?? 'Failed to update operator')
+  }
+
+  return data as Profile
+}
