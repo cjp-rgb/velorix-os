@@ -309,6 +309,68 @@ export type Database = {
           },
         ]
       }
+      client_trades: {
+        Row: {
+          account_id: number
+          campaign_source: string | null
+          client_name: string | null
+          created_at: string
+          id: number
+          instrument: string
+          lots_type: string | null
+          notional_value_usd: number
+          operator_id: string | null
+          rebate_usd: number
+          source_upload_id: string | null
+          total_volume: number | null
+          trade_date: string
+          updated_at: string
+          user_id: number | null
+        }
+        Insert: {
+          account_id: number
+          campaign_source?: string | null
+          client_name?: string | null
+          created_at?: string
+          id?: number
+          instrument: string
+          lots_type?: string | null
+          notional_value_usd: number
+          operator_id?: string | null
+          rebate_usd: number
+          source_upload_id?: string | null
+          total_volume?: number | null
+          trade_date: string
+          updated_at?: string
+          user_id?: number | null
+        }
+        Update: {
+          account_id?: number
+          campaign_source?: string | null
+          client_name?: string | null
+          created_at?: string
+          id?: number
+          instrument?: string
+          lots_type?: string | null
+          notional_value_usd?: number
+          operator_id?: string | null
+          rebate_usd?: number
+          source_upload_id?: string | null
+          total_volume?: number | null
+          trade_date?: string
+          updated_at?: string
+          user_id?: number | null
+        }
+        Relationships: [
+          {
+            foreignKeyName: "client_trades_operator_id_fkey"
+            columns: ["operator_id"]
+            isOneToOne: false
+            referencedRelation: "profiles"
+            referencedColumns: ["id"]
+          },
+        ]
+      }
       content_templates: {
         Row: {
           category: string
