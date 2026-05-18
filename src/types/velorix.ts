@@ -25,6 +25,7 @@ export type SubAffiliateInvitation = Database['public']['Tables']['sub_affiliate
 export type SubAffiliateInvitationInsert = Database['public']['Tables']['sub_affiliate_invitations']['Insert']
 
 export type DataUpload = Database['public']['Tables']['data_uploads']['Row']
+export type DataUploadInsert = Database['public']['Tables']['data_uploads']['Insert']
 export type AuditLogEntry = Database['public']['Tables']['audit_log']['Row']
 export type Notification = Database['public']['Tables']['notifications']['Row']
 

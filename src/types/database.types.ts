@@ -14,6 +14,65 @@ export type Database = {
   }
   public: {
     Tables: {
+      account_creation_events: {
+        Row: {
+          account_id: number
+          account_type: string | null
+          available_balance: number | null
+          base_currency: string | null
+          campaign_source: string | null
+          client_name: string | null
+          created_at: string
+          date: string
+          id: number
+          operator_id: string | null
+          platform: string | null
+          source_upload_id: string | null
+          updated_at: string
+          user_id: number | null
+        }
+        Insert: {
+          account_id: number
+          account_type?: string | null
+          available_balance?: number | null
+          base_currency?: string | null
+          campaign_source?: string | null
+          client_name?: string | null
+          created_at?: string
+          date: string
+          id?: number
+          operator_id?: string | null
+          platform?: string | null
+          source_upload_id?: string | null
+          updated_at?: string
+          user_id?: number | null
+        }
+        Update: {
+          account_id?: number
+          account_type?: string | null
+          available_balance?: number | null
+          base_currency?: string | null
+          campaign_source?: string | null
+          client_name?: string | null
+          created_at?: string
+          date?: string
+          id?: number
+          operator_id?: string | null
+          platform?: string | null
+          source_upload_id?: string | null
+          updated_at?: string
+          user_id?: number | null
+        }
+        Relationships: [
+          {
+            foreignKeyName: "account_creation_events_operator_id_fkey"
+            columns: ["operator_id"]
+            isOneToOne: false
+            referencedRelation: "profiles"
+            referencedColumns: ["id"]
+          },
+        ]
+      }
       audit_log: {
         Row: {
           action_type: string
@@ -101,6 +160,148 @@ export type Database = {
         Relationships: [
           {
             foreignKeyName: "automation_configs_operator_id_fkey"
+            columns: ["operator_id"]
+            isOneToOne: false
+            referencedRelation: "profiles"
+            referencedColumns: ["id"]
+          },
+        ]
+      }
+      client_deposits: {
+        Row: {
+          account_id: number
+          campaign_source: string | null
+          created_at: string
+          date: string
+          deposits: number | null
+          id: number
+          net_deposits: number | null
+          operator_id: string | null
+          source_upload_id: string | null
+          updated_at: string
+          user_id: number | null
+          withdraws: number | null
+        }
+        Insert: {
+          account_id: number
+          campaign_source?: string | null
+          created_at?: string
+          date: string
+          deposits?: number | null
+          id?: number
+          net_deposits?: number | null
+          operator_id?: string | null
+          source_upload_id?: string | null
+          updated_at?: string
+          user_id?: number | null
+          withdraws?: number | null
+        }
+        Update: {
+          account_id?: number
+          campaign_source?: string | null
+          created_at?: string
+          date?: string
+          deposits?: number | null
+          id?: number
+          net_deposits?: number | null
+          operator_id?: string | null
+          source_upload_id?: string | null
+          updated_at?: string
+          user_id?: number | null
+          withdraws?: number | null
+        }
+        Relationships: [
+          {
+            foreignKeyName: "client_deposits_operator_id_fkey"
+            columns: ["operator_id"]
+            isOneToOne: false
+            referencedRelation: "profiles"
+            referencedColumns: ["id"]
+          },
+        ]
+      }
+      client_snapshots: {
+        Row: {
+          account_equity: number | null
+          account_id: number
+          account_journey: string | null
+          account_owner_name: string | null
+          account_type: string | null
+          balance: number | null
+          base_currency: string | null
+          campaign_source: string | null
+          client_name: string | null
+          created_at: string
+          credit: number | null
+          id: number
+          last_deposit_amount: string | null
+          last_deposit_date: string | null
+          last_trade_date: string | null
+          last_traded_instrument: string | null
+          last_traded_lots: string | null
+          operator_id: string | null
+          platform: string | null
+          profit: number | null
+          snapshot_date: string
+          source_upload_id: string | null
+          updated_at: string
+          user_id: number | null
+        }
+        Insert: {
+          account_equity?: number | null
+          account_id: number
+          account_journey?: string | null
+          account_owner_name?: string | null
+          account_type?: string | null
+          balance?: number | null
+          base_currency?: string | null
+          campaign_source?: string | null
+          client_name?: string | null
+          created_at?: string
+          credit?: number | null
+          id?: number
+          last_deposit_amount?: string | null
+          last_deposit_date?: string | null
+          last_trade_date?: string | null
+          last_traded_instrument?: string | null
+          last_traded_lots?: string | null
+          operator_id?: string | null
+          platform?: string | null
+          profit?: number | null
+          snapshot_date: string
+          source_upload_id?: string | null
+          updated_at?: string
+          user_id?: number | null
+        }
+        Update: {
+          account_equity?: number | null
+          account_id?: number
+          account_journey?: string | null
+          account_owner_name?: string | null
+          account_type?: string | null
+          balance?: number | null
+          base_currency?: string | null
+          campaign_source?: string | null
+          client_name?: string | null
+          created_at?: string
+          credit?: number | null
+          id?: number
+          last_deposit_amount?: string | null
+          last_deposit_date?: string | null
+          last_trade_date?: string | null
+          last_traded_instrument?: string | null
+          last_traded_lots?: string | null
+          operator_id?: string | null
+          platform?: string | null
+          profit?: number | null
+          snapshot_date?: string
+          source_upload_id?: string | null
+          updated_at?: string
+          user_id?: number | null
+        }
+        Relationships: [
+          {
+            foreignKeyName: "client_snapshots_operator_id_fkey"
             columns: ["operator_id"]
             isOneToOne: false
             referencedRelation: "profiles"
